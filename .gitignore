@@ -1,0 +1,5 @@
+# VSCode Settings
+.vscode/
+# Libraries
+motor_driver/
+testing.py
