@@ -1,5 +1,5 @@
 # VSCode Settings
 .vscode/
 # Libraries
-motor_driver/
+motors/
 testing.py
