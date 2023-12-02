@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 """
 # Stamper
-Does stuff lol idk.
+Allows for full control of stamper robot. Chassis object controls wheel 
+position and orientation.
 """
 
 import time
-from math import copysign
+from threading import Thread
 
 import RPi.GPIO as GPIO
 
@@ -25,71 +26,69 @@ CLOCKWISE = stepper.Directions.CLOCKWISE
 COUNTER_CLOCKWISE = stepper.Directions.COUNTER_CLOCKWISE
 UP = CLOCKWISE
 DOWN = COUNTER_CLOCKWISE
-LEFT = CLOCKWISE
-RIGHT = COUNTER_CLOCKWISE
+LEFT = COUNTER_CLOCKWISE
+RIGHT = CLOCKWISE
 
 # Defines board pins
 VERTICAL_MOTOR_PINS = (17, 22, 23, 27)
 HORIZONTAL_MOTOR_PINS = (5, 6, 12, 13)
 STAMPER_WHEEL_PINS = (16, 19, 20, 26)
-BUTTON_PIN = 4
+HORIZONTAL_LIMIT_PIN = 4
 
-# Defines functional constants
-HORIZONTAL_SHIFT_STEPS = 1200
+
+class StageCounts:
+    INK_DIP = 1200
+    FLOOR_DIP = 1900
+    INK_HORIZONTAL = 1800
+    CHARACTER_HORIZONTAL = 1000
+    ADVANCE_CHARACTER = 25
+
 
 # Sets up motors
 stepper.board_setup()
-VERTICAL_TRAVEL_MOTORS = stepper.Motor(VERTICAL_MOTOR_PINS)
-HORIZONTAL_TRAVEL_MOTOR = stepper.Motor(HORIZONTAL_MOTOR_PINS)
 
 
 def main():
     """
     Runs main stamper actions.
     """
-    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
-    wheel = Wheel("0")
+    # GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
+    chassis = Chassis("0")
 
-    time.sleep(1)
+    GPIO.setup(HORIZONTAL_LIMIT_PIN, GPIO.IN)  # type: ignore
 
-    wheel.advance()
+    level = GPIO.input(HORIZONTAL_LIMIT_PIN)  # type: ignore
 
-    time.sleep(1)
+    while True:
+        print(level)
+        time.sleep(0.5)
 
-    dip_chassis(600)
+    # chassis.travel_vertical(200, UP)
 
-    # horizontal_shift(LEFT)
-
-    # time.sleep(1)
-
-    # dip_chassis(200)
+    # chassis.advance(-3)
 
     # time.sleep(1)
 
-    # horizontal_shift(RIGHT)
+    # # chassis.advance(-4)
+
+    # chassis.roll_to_character("A")
 
     # time.sleep(1)
 
-    stepper.board_cleanup()
+    # chassis.roll_to_character("B")
+
+    # time.sleep(1)
+
+    # chassis.roll_to_character("D")
+
+    # time.sleep(1)
+
+    # chassis.roll_to_character("0")
+
+    # stepper.board_cleanup()
 
 
-def horizontal_shift(direction: int, num_steps: int = HORIZONTAL_SHIFT_STEPS):
-    """
-    Moves slider horizontally on lead screw.
-    """
-    stepper.step_motor(HORIZONTAL_TRAVEL_MOTOR, num_steps, direction)
-
-
-def dip_chassis(num_steps: int, delay: float = 0.5):
-    """
-    Moves chassis down and then up specified number of steps.
-    """
-    stepper.step_motor(VERTICAL_TRAVEL_MOTORS, num_steps, DOWN)
-    time.sleep(delay)
-    stepper.step_motor(VERTICAL_TRAVEL_MOTORS, num_steps, UP)
-
-
-class Wheel:
+class Chassis:
     def __init__(self, current_character: str) -> None:
         self.CHARACTERS = [
             "0",
@@ -114,49 +113,54 @@ class Wheel:
 
         self._BASE_STEPS = 25
 
-        self.motor = stepper.Motor(STAMPER_WHEEL_PINS)
+        self.character_motor = stepper.Motor(STAMPER_WHEEL_PINS)
+        self.horizontal_motor = stepper.Motor(HORIZONTAL_MOTOR_PINS)
+        self.vertical_motors = stepper.Motor(VERTICAL_MOTOR_PINS)
 
-        self.current_character = current_character
+        self.current_character_index = self._index(current_character)
 
-    def advance(self, direction: int = CLOCKWISE):
+    def advance(self, difference: int = 1, delay: float = 0.25):
         """
         Advances wheel one character in specified direction.
         """
-        stepper.step_motor(self.motor, self._BASE_STEPS, direction)
+        for _ in range(abs(difference)):
+            # Advances wheel one stage in correct direction
+            stepper.step_motor(
+                self.character_motor,
+                StageCounts.ADVANCE_CHARACTER,
+                -difference // abs(difference),
+                rpm=20,
+            )
+            time.sleep(delay)
 
-    def roll_to_character(self, new_character: str, delay: float = 0.25) -> None:
+    def roll_to_character(self, new_character: str) -> None:
         """
         Advances wheel from current character to new character.
         """
+        # Finds index of new character
+        new_index = self._index(new_character)
         # Finds difference between positions
-        difference = self._index(new_character) - self._index(self.current_character)
-        # Finds sign of difference
-        difference_sign = int(copysign(1, difference))
-        # Re-assigns current character
-        self.current_character = new_character
-
-        # Optimizes difference to take shortest path
-        if abs(difference) > self.NUM_CHARACTERS // 2:
-            difference = round(-difference_sign * self.NUM_CHARACTERS + difference)
-        # Reports amount wheel will advance
-        self._report_turn(difference)
-        # For each character stage:
-        for _ in range(difference):
-            # Advances wheel one stage in correct direction
-            self.advance(difference_sign)
-            time.sleep(delay)
-
-    def _report_turn(self, difference: int) -> None:
-        """
-        Reports amount wheel will turn for specified difference.
-        """
+        difference = new_index - self.current_character_index
+        # Checks that character movement is needed
         if not difference:
             print("No turning needed for wheel!")
             return
-        # Defines direction
-        direction = "forwards" if difference >= 0 else "backwards"
-        # Prints statement
-        print(f"Turning wheel {direction} {difference} stages!")
+        # Re-assigns current character
+        self.current_character_index = new_index
+
+        print(f"Old difference: {difference}")
+        # Optimizes difference to take shortest path
+        if abs(difference) > self.NUM_CHARACTERS // 2:
+            # difference += self.NUM_CHARACTERS * (difference // abs(difference))
+            if difference < 0:
+                difference += self.NUM_CHARACTERS
+            else:
+                difference -= self.NUM_CHARACTERS
+        print(f"New difference: {difference}")
+        # Reports amount wheel will advance
+        self._report_turn(difference)
+        # For each character stage:
+        self.advance(difference)
 
     def _index(self, character: str) -> int:
         """
@@ -166,13 +170,53 @@ class Wheel:
         if character not in self.CHARACTERS:
             raise ValueError("Charater not on wheel!")
         # Returns appropriate index
+        print(f"Index of {character}: {self.CHARACTERS.index(character)}")
         return self.CHARACTERS.index(character)
+
+    def _report_turn(self, difference: int) -> None:
+        """
+        Reports amount wheel will turn for specified difference.
+        """
+        # Defines direction
+        direction = "forwards" if difference >= 0 else "backwards"
+        # Prints statement
+        print(f"Turning wheel {direction} {difference} stages!")
+
+    def zero_horizontal(self) -> None:
+        pass
+
+    def travel_horizontal(self, num_steps, direction: int):
+        """
+        Moves slider horizontally on lead screw.
+        """
+        time.sleep(0.5)
+
+        stepper.step_motor(self.horizontal_motor, num_steps, direction)
+
+    def travel_vertical(self, num_steps: int, direction: int):
+        """
+        Moves chassis vertically on lead screws.
+        """
+        time.sleep(0.5)
+
+        stepper.step_motor(self.vertical_motors, num_steps, direction)
+
+    def dip(self, num_steps, delay=0.5):
+        """
+        Moves chassis down and then up specified number of steps.
+        """
+        # stepper.lock(self.motor)
+        time.sleep(0.5)
+        self.travel_vertical(num_steps, DOWN)
+        time.sleep(delay)
+        self.travel_vertical(num_steps, UP)
+        # stepper.unlock(self.motor)
 
     def get_characters(self) -> list[str]:
         return self.CHARACTERS
 
 
-def get_code(wheel: Wheel) -> str:
+def get_code(wheel: Chassis) -> str:
     while True:
         code = input("Please enter a four-character code to print: ")
 

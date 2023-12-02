@@ -1,5 +1,6 @@
 # VSCode Settings
 .vscode/
-# Libraries
+# Libraries / testing
 motors/
+testing/
 testing.py
