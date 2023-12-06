@@ -120,7 +120,9 @@ class Chassis:
         delay: float = 0,
     ):
         """
-        Advances wheel one character in specified direction.
+        Advances wheel one character in specified direction. Takes character
+        difference and direction as parameters. Optional difference delay
+        parameter.
         """
         # Acquires direction from difference
         if not difference_direction:
@@ -141,7 +143,8 @@ class Chassis:
 
     def advance_to_character(self, new_character: str, report: bool = False) -> None:
         """
-        Advances wheel from current character to new character.
+        Advances wheel from current character to new character. Takes current
+        character as input. Optional parameter to report amount moved.
         """
         # Finds index of new character
         new_index = self._index(new_character)
@@ -155,12 +158,9 @@ class Chassis:
         if not character_difference:
             print("No turning needed for wheel!")
             return
-
-        print(f"Old difference: {character_difference}")
         # Optimizes difference to take shortest path
         if abs(character_difference) > self.NUM_CHARACTERS // 2:
             character_difference += self.NUM_CHARACTERS * -difference_direction
-        print(f"New difference: {character_difference}")
         # Reports amount wheel will advance
         if report:
             # Defines direction name
@@ -178,24 +178,42 @@ class Chassis:
         if character not in self.CHARACTERS:
             raise ValueError("Charater not on wheel!")
         # Returns appropriate index
-        # print(f"Index of {character}: {self.CHARACTERS.index(character)}")
         return self.CHARACTERS.index(character)
 
-    def re_ink(self) -> None:
+    def move_horizontal(self, num_steps: float, direction: int):
         """
-        Gets ink from pad and returns to original position.
+        Moves slider horizontally on lead screw. Takes number of steps and
+        direction as parameters.
         """
-        # Zeros out and records steps
-        steps_taken = self.zero_horizontal()
-        # Dips to pad
-        self.dip(StepCounts.INK_DIP)
-        # Moves back to original position
-        self.move_horizontal(steps_taken, RIGHT)
+        stepper.step_motor(self.HORIZONTAL_MOTOR, num_steps, direction)
+
+    def move_vertical(self, num_steps: float, direction: int) -> None:
+        """
+        Moves chassis vertically on lead screws. Takes number of steps and
+        direction as parameters.
+        """
+        time.sleep(0.5)
+
+        stepper.step_motor(self.VERTICAL_MOTOR, num_steps, direction)
+
+    def dip(self, num_steps: float, delay=0.5) -> None:
+        """
+        Moves chassis down and then up. Takes number of steps as parameter.
+        Optional delay parameter.
+        """
+        # Locks character motor
+        stepper.lock(self.CHARACTER_MOTOR)
+        time.sleep(delay)
+        self.move_vertical(num_steps, DOWN)
+        time.sleep(delay)
+        self.move_vertical(num_steps, UP)
+        # Unlocks character motor
+        stepper.unlock(self.CHARACTER_MOTOR)
 
     def zero_horizontal(self, num_steps: int = 4) -> int:
         """
-        Zeroes horizontal movement against ink pad limit switch. Returns steps
-        to the left taken before stopping.
+        Zeroes horizontal movement against ink pad limit switch. Takes number
+        of steps as parameter. Returns steps taken before stopping.
         """
         # Defines variables for loop
         MAX_STEPS = 5000
@@ -213,32 +231,16 @@ class Chassis:
         # Returns total steps taken before stopping
         return steps_taken
 
-    def move_horizontal(self, num_steps: float, direction: int):
+    def re_ink(self) -> None:
         """
-        Moves slider horizontally on lead screw.
+        Moves to ink pad to resupply and returns to original position.
         """
-        stepper.step_motor(self.HORIZONTAL_MOTOR, num_steps, direction)
-
-    def move_vertical(self, num_steps: float, direction: int):
-        """
-        Moves chassis vertically on lead screws.
-        """
-        time.sleep(0.5)
-
-        stepper.step_motor(self.VERTICAL_MOTOR, num_steps, direction)
-
-    def dip(self, num_steps: float, delay=0.5):
-        """
-        Moves chassis down and then up specified number of steps.
-        """
-        # Locks character motor
-        stepper.lock(self.CHARACTER_MOTOR)
-        time.sleep(delay)
-        self.move_vertical(num_steps, DOWN)
-        time.sleep(delay)
-        self.move_vertical(num_steps, UP)
-        # Unlocks character motor
-        stepper.unlock(self.CHARACTER_MOTOR)
+        # Zeros out and records steps
+        steps_taken = self.zero_horizontal()
+        # Dips to pad
+        self.dip(StepCounts.INK_DIP)
+        # Moves back to original position
+        self.move_horizontal(steps_taken, RIGHT)
 
 
 def get_code(chassis: Chassis) -> str:
@@ -261,6 +263,9 @@ def get_code(chassis: Chassis) -> str:
 
 
 def test_actions(chassis: Chassis) -> None:
+    """
+    Runs a series of test actions.
+    """
     chassis.re_ink()
 
     chassis.move_horizontal(1000, RIGHT)
