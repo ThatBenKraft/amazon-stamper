@@ -7,6 +7,7 @@ position and orientation.
 
 import time
 from math import copysign
+from typing import Callable
 
 import RPi.GPIO as GPIO
 
@@ -16,32 +17,25 @@ __author__ = "Ben Kraft"
 __copyright__ = "None"
 __credits__ = "Ben Kraft"
 __license__ = "Apache"
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __maintainer__ = "Ben Kraft"
 __email__ = "ben.kraft@rcn.com"
 __status__ = "Prototype"
 
+
+STARTING_CHARACTER = "0"
+
+
 # Defines directions
-CLOCKWISE = stepper.Directions.CLOCKWISE
-COUNTER_CLOCKWISE = stepper.Directions.COUNTER_CLOCKWISE
-UP = CLOCKWISE
-DOWN = COUNTER_CLOCKWISE
-LEFT = COUNTER_CLOCKWISE
-RIGHT = CLOCKWISE
+class Directions:
+    """
+    Establishes stamper movement directions.
+    """
 
-# Defines board pins
-VERTICAL_MOTOR_PINS = (17, 22, 23, 27)
-HORIZONTAL_MOTOR_PINS = (5, 6, 12, 13)
-STAMPER_WHEEL_PINS = (16, 19, 20, 26)
-HORIZONTAL_LIMIT_PIN = 4
-
-SENSOR_DELAY = 0.05
-
-_found_limit = False
-
-
-# Sets up motors
-stepper.board_setup()
+    DOWN = stepper.Directions.COUNTER_CLOCKWISE
+    UP = stepper.Directions.CLOCKWISE
+    LEFT = stepper.Directions.COUNTER_CLOCKWISE
+    RIGHT = stepper.Directions.CLOCKWISE
 
 
 class StepCounts:
@@ -50,9 +44,9 @@ class StepCounts:
     """
 
     INK_DIP = 950
-    FLOOR_DIP = 1200
-    INK_WIDTH = 400
-    CHARACTER_WIDTH = 500
+    FLOOR_DIP = 1300
+    INK_WIDTH = 1100
+    CHARACTER_WIDTH = 400
     ADVANCE_CHARACTER = 12.5
 
 
@@ -61,13 +55,13 @@ def main():
     Runs main stamper actions.
     """
     # Creates chassis object
-    chassis = Chassis("0")
-    # Acquires code from command line
-    code = get_code(chassis)
+    chassis = Chassis(STARTING_CHARACTER)
     # Zeros out horizontal
     chassis.zero_horizontal()
+    # Acquires code from command line
+    code = get_code(chassis.CHARACTERS)
     # Defines starting character
-    prev_character = "0"
+    prev_character = STARTING_CHARACTER
     # For each character in code:
     for index, character in enumerate(code):
         # Moves wheel to character
@@ -75,11 +69,10 @@ def main():
         # Re-inks if nessesary
         if not character == prev_character or not index:
             chassis.re_ink()
-        # Advances past ink pad on first character
-        if not index:
-            chassis.move_horizontal(StepCounts.INK_WIDTH, RIGHT)
+        # Defines shift amount with exception for first loop
+        horizontal_shift = StepCounts.CHARACTER_WIDTH if index else StepCounts.INK_WIDTH
         # Shifts to next position
-        chassis.move_horizontal(StepCounts.CHARACTER_WIDTH, RIGHT)
+        chassis.move_horizontal(horizontal_shift, Directions.RIGHT)
         # Dips chassis
         chassis.dip(StepCounts.FLOOR_DIP)
 
@@ -90,35 +83,40 @@ class Chassis:
     movements.
     """
 
-    # Constants for number of steps
-
     # Characters in wheel
     CHARACTERS = [character for character in "0123456789ABCDEF"]
     NUM_CHARACTERS = len(CHARACTERS)
     # Defines default sequence and rpm for movement
     SEQUENCE = stepper.Sequences.HALFSTEP
-    TRAVEL_RPM = 70
+    MOVE_RPM = 75
     WHEEL_RPM = 20
-    # Creates motor object
-    CHARACTER_MOTOR = stepper.Motor(STAMPER_WHEEL_PINS)
-    HORIZONTAL_MOTOR = stepper.Motor(HORIZONTAL_MOTOR_PINS)
-    VERTICAL_MOTOR = stepper.Motor(VERTICAL_MOTOR_PINS)
 
     def __init__(self, current_character: str) -> None:
         """
-        A class for controlling the stamper chassis horizonal, vertical, and wheel
-        movements.
+        A class for controlling the stamper chassis horizonal, vertical, and
+        wheel movements.
         """
         self.character_index = self._index(current_character)
-        # Sets up limit switches
-        GPIO.setup(HORIZONTAL_LIMIT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
+        # Sets up motors and limit switch
+        stepper.board_setup()
+
+        # Creates motor objects
+        self.WHEEL_MOTOR = stepper.Motor((16, 19, 20, 26))
+        self.HORIZONTAL_MOTOR = stepper.Motor((5, 6, 12, 13))
+        self.VERTICAL_MOTOR = stepper.Motor((17, 22, 23, 27))
+        # Assigns limit pins
+        self.HORIZONTAL_LIMIT_PIN = 4
+        self.VERTICAL_LIMIT_PIN = 0
+        # Sets up limit switch with internal pull up resistor
+        GPIO.setup(self.HORIZONTAL_LIMIT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
+        GPIO.setup(self.VERTICAL_LIMIT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
 
     def advance_wheel(
         self,
         character_difference: int = 1,
         difference_direction: int = 0,
         delay: float = 0,
-    ):
+    ) -> None:
         """
         Advances wheel one character in specified direction. Takes character
         difference and direction as parameters. Optional difference delay
@@ -133,7 +131,7 @@ class Chassis:
         for _ in range(abs(character_difference)):
             # Advances wheel one character in direction
             stepper.step_motor(
-                motor=self.CHARACTER_MOTOR,
+                motor=self.WHEEL_MOTOR,
                 num_steps=StepCounts.ADVANCE_CHARACTER,
                 direction=-direction,
                 sequence=stepper.Sequences.HALFSTEP,
@@ -180,52 +178,102 @@ class Chassis:
         # Returns appropriate index
         return self.CHARACTERS.index(character)
 
-    def move_horizontal(self, num_steps: float, direction: int):
+    def move_horizontal(
+        self, num_steps: float, direction: int, rpm: float = MOVE_RPM
+    ) -> None:
         """
         Moves slider horizontally on lead screw. Takes number of steps and
         direction as parameters.
         """
-        stepper.step_motor(self.HORIZONTAL_MOTOR, num_steps, direction)
+        stepper.step_motor(
+            self.HORIZONTAL_MOTOR,
+            num_steps,
+            direction,
+            self.SEQUENCE,
+            rpm,
+        )
 
-    def move_vertical(self, num_steps: float, direction: int) -> None:
+    def move_vertical(
+        self, num_steps: float, direction: int, rpm: float = MOVE_RPM
+    ) -> None:
         """
         Moves chassis vertically on lead screws. Takes number of steps and
         direction as parameters.
         """
-        time.sleep(0.5)
+        stepper.step_motor(
+            self.VERTICAL_MOTOR,
+            num_steps,
+            direction,
+            self.SEQUENCE,
+            rpm,
+        )
 
-        stepper.step_motor(self.VERTICAL_MOTOR, num_steps, direction)
-
-    def dip(self, num_steps: float, delay=0.5) -> None:
+    def dip(self, num_steps: float, delay=0.5, lock: bool = False) -> None:
         """
         Moves chassis down and then up. Takes number of steps as parameter.
         Optional delay parameter.
         """
         # Locks character motor
-        stepper.lock(self.CHARACTER_MOTOR)
+        if lock:
+            stepper.lock(self.WHEEL_MOTOR)
+        # time.sleep(delay)
+        self.move_vertical(num_steps, Directions.DOWN)
         time.sleep(delay)
-        self.move_vertical(num_steps, DOWN)
-        time.sleep(delay)
-        self.move_vertical(num_steps, UP)
+        self.move_vertical(num_steps, Directions.UP)
         # Unlocks character motor
-        stepper.unlock(self.CHARACTER_MOTOR)
+        if lock:
+            stepper.unlock(self.WHEEL_MOTOR)
 
-    def zero_horizontal(self, num_steps: int = 4) -> int:
+    def zero_horizontal(self) -> int:
         """
-        Zeroes horizontal movement against ink pad limit switch. Takes number
-        of steps as parameter. Returns steps taken before stopping.
+        Zeroes horizontal movement against side limit switch. Returns steps
+        taken before stopping.
+        """
+        # Reports
+        print("Zeroing horizontally. . .")
+        # Runs zeroing function
+        return self._zero(
+            self.move_horizontal,
+            Directions.LEFT,
+            self.HORIZONTAL_LIMIT_PIN,
+        )
+
+    def zero_vertical(self) -> int:
+        """
+        Zeroes vertical movement against top limit switch. Returns steps
+        taken before stopping.
+        """
+        # Reports
+        print("Zeroing vertically. . .")
+        # Runs zeroing function
+        return self._zero(
+            self.move_horizontal,
+            Directions.UP,
+            self.VERTICAL_LIMIT_PIN,
+        )
+
+    def _zero(
+        self,
+        move_function: Callable[[int, int], None],
+        direction: int,
+        limit_pin: int,
+        num_steps: int = 4,
+    ) -> int:
+        """
+        Zeroes movement against specified limit switch. Takes moving function,
+        direction, and limit switch pin as paramters. Returns steps taken
+        before stopping.
         """
         # Defines variables for loop
         MAX_STEPS = 5000
         steps_taken = 0
-        # Reports
-        print("Zeroing ...")
         # While pin is not active and number of steps is under max:
         while (
-            GPIO.input(HORIZONTAL_LIMIT_PIN) and steps_taken < MAX_STEPS  # type:ignore
+            GPIO.input(limit_pin)  # type:ignore
+            and steps_taken < MAX_STEPS
         ):
             # Moves horizontally number of steps
-            self.move_horizontal(num_steps, LEFT)
+            move_function(num_steps, direction)
             # Adds steps taken
             steps_taken += num_steps
         # Returns total steps taken before stopping
@@ -240,12 +288,12 @@ class Chassis:
         # Dips to pad
         self.dip(StepCounts.INK_DIP)
         # Moves back to original position
-        self.move_horizontal(steps_taken, RIGHT)
+        self.move_horizontal(steps_taken, Directions.RIGHT)
 
 
-def get_code(chassis: Chassis) -> str:
+def get_code(characters: list[str]) -> str:
     """
-    Gets code from command line.
+    Gets code from command line. Takes character list as parameter.
     """
     while True:
         code = input("Please enter a four-character code to print: ")
@@ -254,7 +302,7 @@ def get_code(chassis: Chassis) -> str:
             print("Code must be four characters long.")
             continue
         # If the code has characters not in list:
-        elif any(character.upper() not in chassis.CHARACTERS for character in code):
+        elif any(character.upper() not in characters for character in code):
             print("One or more characters in code not on wheel.")
             continue
         break
@@ -266,28 +314,19 @@ def test_actions(chassis: Chassis) -> None:
     """
     Runs a series of test actions.
     """
-    chassis.re_ink()
+    chassis.advance_to_character("5")
 
-    chassis.move_horizontal(1000, RIGHT)
+    chassis.zero_horizontal()
 
-    chassis.advance_wheel(3)
+    chassis.move_horizontal(StepCounts.INK_WIDTH, Directions.RIGHT)
 
     chassis.dip(StepCounts.FLOOR_DIP)
-
-    chassis.move_horizontal(StepCounts.CHARACTER_WIDTH, RIGHT)
-
-    chassis.advance_wheel(-5)
-
-    time.sleep(1)
-
-    chassis.re_ink()
-
-    stepper.board_cleanup()
 
 
 if __name__ == "__main__":
     try:
         main()
-        # test_actions(Chassis("0"))
+        # test_actions(Chassis(STARTING_CHARACTER))
+        stepper.board_cleanup()
     except KeyboardInterrupt:
         stepper.board_cleanup()
