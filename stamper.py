@@ -22,8 +22,11 @@ __maintainer__ = "Ben Kraft"
 __email__ = "ben.kraft@rcn.com"
 __status__ = "Prototype"
 
+CHARACTERS = [character for character in "0123456789ABCDEF"]
 
 STARTING_CHARACTER = "0"
+
+NUM_CHARACTERS = len(CHARACTERS)
 
 
 # Defines directions
@@ -57,18 +60,24 @@ def main():
     # Creates chassis object
     chassis = Chassis(STARTING_CHARACTER)
     # Zeros out horizontal
+    print("Zeroing. . .")
     chassis.zero_horizontal()
     # Acquires code from command line
-    code = get_code(chassis.CHARACTERS)
+    code = "ABCD"  # get_code(chassis.CHARACTERS)
     # Defines starting character
     prev_character = STARTING_CHARACTER
     # For each character in code:
     for index, character in enumerate(code):
+        # Reports character
+        print(f"Stamping: [ {character} ]...")
         # Moves wheel to character
         chassis.advance_to_character(character)
         # Re-inks if nessesary
-        if not character == prev_character or not index:
+        if not (character == prev_character and index):
+            print("Re-inking. . .")
             chassis.re_ink()
+        # Sets previous character to character
+        prev_character = character
         # Defines shift amount with exception for first loop
         horizontal_shift = StepCounts.CHARACTER_WIDTH if index else StepCounts.INK_WIDTH
         # Shifts to next position
@@ -83,9 +92,6 @@ class Chassis:
     movements.
     """
 
-    # Characters in wheel
-    CHARACTERS = [character for character in "0123456789ABCDEF"]
-    NUM_CHARACTERS = len(CHARACTERS)
     # Defines default sequence and rpm for movement
     SEQUENCE = stepper.Sequences.HALFSTEP
     MOVE_RPM = 75
@@ -154,11 +160,10 @@ class Chassis:
         difference_direction = int(copysign(1, character_difference))
         # Checks that character movement is needed
         if not character_difference:
-            print("No turning needed for wheel!")
             return
         # Optimizes difference to take shortest path
-        if abs(character_difference) > self.NUM_CHARACTERS // 2:
-            character_difference += self.NUM_CHARACTERS * -difference_direction
+        if abs(character_difference) > NUM_CHARACTERS // 2:
+            character_difference += NUM_CHARACTERS * -difference_direction
         # Reports amount wheel will advance
         if report:
             # Defines direction name
@@ -173,10 +178,10 @@ class Chassis:
         Finds index of character on wheel.
         """
         # Checks for invalid character
-        if character not in self.CHARACTERS:
+        if character not in CHARACTERS:
             raise ValueError("Charater not on wheel!")
         # Returns appropriate index
-        return self.CHARACTERS.index(character)
+        return CHARACTERS.index(character)
 
     def move_horizontal(
         self, num_steps: float, direction: int, rpm: float = MOVE_RPM
@@ -229,8 +234,6 @@ class Chassis:
         Zeroes horizontal movement against side limit switch. Returns steps
         taken before stopping.
         """
-        # Reports
-        print("Zeroing horizontally. . .")
         # Runs zeroing function
         return self._zero(
             self.move_horizontal,
@@ -243,8 +246,6 @@ class Chassis:
         Zeroes vertical movement against top limit switch. Returns steps
         taken before stopping.
         """
-        # Reports
-        print("Zeroing vertically. . .")
         # Runs zeroing function
         return self._zero(
             self.move_horizontal,
@@ -307,26 +308,30 @@ def get_code(characters: list[str]) -> str:
             continue
         break
     # Returns valid code
-    return code
+    return code.upper()
 
 
 def test_actions(chassis: Chassis) -> None:
     """
     Runs a series of test actions.
     """
-    chassis.advance_to_character("5")
 
-    chassis.zero_horizontal()
+    chassis.move_horizontal(1000, Directions.RIGHT)
+    chassis.move_vertical(StepCounts.FLOOR_DIP, Directions.DOWN)
+    # chassis.advance_to_character("5")
 
-    chassis.move_horizontal(StepCounts.INK_WIDTH, Directions.RIGHT)
+    # chassis.zero_horizontal()
 
-    chassis.dip(StepCounts.FLOOR_DIP)
+    # chassis.move_horizontal(StepCounts.INK_WIDTH, Directions.RIGHT)
+
+    # chassis.dip(StepCounts.FLOOR_DIP)
 
 
 if __name__ == "__main__":
     try:
-        main()
-        # test_actions(Chassis(STARTING_CHARACTER))
-        stepper.board_cleanup()
+        # main()
+        test_actions(Chassis(STARTING_CHARACTER))
     except KeyboardInterrupt:
+        pass
+    finally:
         stepper.board_cleanup()

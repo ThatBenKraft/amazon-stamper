@@ -3,4 +3,6 @@
 # Libraries / testing
 motors/
 testing/
-testing.py
+testing.py/
+tempCodeRunnerFile.py/
+__pycache__/
