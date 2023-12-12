@@ -7,11 +7,14 @@ position and orientation.
 
 import time
 from math import copysign
+from threading import Thread
 from typing import Callable
 
 import RPi.GPIO as GPIO
 
 from motors import stepper
+from webapp import host
+from webapp.storage import Cells, get_cell, set_cell
 
 __author__ = "Ben Kraft"
 __copyright__ = "None"
@@ -22,7 +25,7 @@ __maintainer__ = "Ben Kraft"
 __email__ = "ben.kraft@rcn.com"
 __status__ = "Prototype"
 
-CHARACTERS = [character for character in "0123456789ABCDEF"]
+CHARACTERS = "0123456789ABCDEF"
 
 STARTING_CHARACTER = "0"
 
@@ -53,39 +56,6 @@ class StepCounts:
     ADVANCE_CHARACTER = 12.5
 
 
-def main():
-    """
-    Runs main stamper actions.
-    """
-    # Creates chassis object
-    chassis = Chassis(STARTING_CHARACTER)
-    # Zeros out horizontal
-    print("Zeroing. . .")
-    chassis.zero_horizontal()
-    # Acquires code from command line
-    code = "ABCD"  # get_code(chassis.CHARACTERS)
-    # Defines starting character
-    prev_character = STARTING_CHARACTER
-    # For each character in code:
-    for index, character in enumerate(code):
-        # Reports character
-        print(f"Stamping: [ {character} ]...")
-        # Moves wheel to character
-        chassis.advance_to_character(character)
-        # Re-inks if nessesary
-        if not (character == prev_character and index):
-            print("Re-inking. . .")
-            chassis.re_ink()
-        # Sets previous character to character
-        prev_character = character
-        # Defines shift amount with exception for first loop
-        horizontal_shift = StepCounts.CHARACTER_WIDTH if index else StepCounts.INK_WIDTH
-        # Shifts to next position
-        chassis.move_horizontal(horizontal_shift, Directions.RIGHT)
-        # Dips chassis
-        chassis.dip(StepCounts.FLOOR_DIP)
-
-
 class Chassis:
     """
     A class for controlling the stamper chassis horizonal, vertical, and wheel
@@ -94,7 +64,7 @@ class Chassis:
 
     # Defines default sequence and rpm for movement
     SEQUENCE = stepper.Sequences.HALFSTEP
-    MOVE_RPM = 75
+    MOVE_RPM = 80
     WHEEL_RPM = 20
 
     def __init__(self, current_character: str) -> None:
@@ -112,7 +82,7 @@ class Chassis:
         self.VERTICAL_MOTOR = stepper.Motor((17, 22, 23, 27))
         # Assigns limit pins
         self.HORIZONTAL_LIMIT_PIN = 4
-        self.VERTICAL_LIMIT_PIN = 0
+        self.VERTICAL_LIMIT_PIN = 25
         # Sets up limit switch with internal pull up resistor
         GPIO.setup(self.HORIZONTAL_LIMIT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
         GPIO.setup(self.VERTICAL_LIMIT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
@@ -248,7 +218,7 @@ class Chassis:
         """
         # Runs zeroing function
         return self._zero(
-            self.move_horizontal,
+            self.move_vertical,
             Directions.UP,
             self.VERTICAL_LIMIT_PIN,
         )
@@ -291,8 +261,38 @@ class Chassis:
         # Moves back to original position
         self.move_horizontal(steps_taken, Directions.RIGHT)
 
+    def print_code(self, code: str) -> None:
+        """
+        Runs main stamper actions.
+        """
+        # Zeros out horizontal
+        print("Zeroing. . .")
+        self.zero_horizontal()
+        # Defines starting character
+        prev_character = STARTING_CHARACTER
+        # For each character in code:
+        for index, character in enumerate(code):
+            # Reports character
+            print(f"Stamping: [ {character} ]...")
+            # Moves wheel to character
+            self.advance_to_character(character)
+            # Re-inks if nessesary
+            if not (character == prev_character and index):
+                print("Re-inking. . .")
+                self.re_ink()
+            # Sets previous character to character
+            prev_character = character
+            # Defines shift amount with exception for first loop
+            horizontal_shift = (
+                StepCounts.CHARACTER_WIDTH if index else StepCounts.INK_WIDTH
+            )
+            # Shifts to next position
+            self.move_horizontal(horizontal_shift, Directions.RIGHT)
+            # Dips chassis
+            self.dip(StepCounts.FLOOR_DIP)
 
-def get_code(characters: list[str]) -> str:
+
+def code_input(characters: list[str]) -> str:
     """
     Gets code from command line. Takes character list as parameter.
     """
@@ -316,22 +316,56 @@ def test_actions(chassis: Chassis) -> None:
     Runs a series of test actions.
     """
 
-    chassis.move_horizontal(1000, Directions.RIGHT)
-    chassis.move_vertical(StepCounts.FLOOR_DIP, Directions.DOWN)
-    # chassis.advance_to_character("5")
+    chassis.move_horizontal(600, Directions.RIGHT)
 
-    # chassis.zero_horizontal()
+    chassis.move_vertical(600, Directions.DOWN)
 
-    # chassis.move_horizontal(StepCounts.INK_WIDTH, Directions.RIGHT)
-
-    # chassis.dip(StepCounts.FLOOR_DIP)
+    chassis.zero_horizontal()
+    chassis.zero_vertical()
 
 
-if __name__ == "__main__":
+def main() -> None:
     try:
-        # main()
-        test_actions(Chassis(STARTING_CHARACTER))
+        # Creates and starts flask thread
+        flask_thread = Thread(target=host.run_flask)
+        flask_thread.start()
+
+        def get_code() -> str:
+            """
+            Helper function for accessing code fom sheet.
+            """
+            return str(get_cell(Cells.CODE))
+
+        # Creates chassis object
+        chassis = Chassis(STARTING_CHARACTER)
+        # Initializes previous code
+        previous_code = get_code()
+        # Loops stamping actions
+        while True:
+            # Gets code
+            print("Acquiring code. . .")
+            time.sleep(3)
+            current_code = get_code()
+            # If code is different:
+            if current_code != previous_code:
+                # Sets sheet running boolean TRUE
+                set_cell(Cells.RUNNING, True)
+                # Prints
+                time.sleep(1)
+                print(f"Printing code: {current_code}")
+                chassis.print_code(current_code)
+                time.sleep(1)
+                # Sets sheet running boolean FALSE
+                set_cell(Cells.RUNNING, False)
+    # Catches keyboard interrupt
     except KeyboardInterrupt:
         pass
     finally:
+        # Stops flask
+        host.stop_flask()
+        # Cleans up board
         stepper.board_cleanup()
+
+
+if __name__ == "__main__":
+    main()

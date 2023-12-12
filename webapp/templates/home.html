@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>Stamper</h1>
+<div class="content-section">
+    <form method="POST" action="" novalidate>
+        {{ form.hidden_tag() }}
+        <fieldset class="form-group">
+            <legend class="border-bottom mb-4">Enter a code for the Amazon Stamper to print.</legend>
+            <div class="form-group">
+                <!-- Displays label -->
+                {{ form.code.label(class="form-control-label") }} must be 4 alpha-numeric characters
+                <!-- Main code form input and displays errors -->
+                {% if form.code.errors %}
+                {{ form.code(class="form-control form-control-lg is-invalid") }}
+                <div class="invalid-feedback">
+                    {% for error in form.code.errors %}
+                    <span>{{ error }}</span>
+                    {% endfor %}
+                </div>
+                {% else %}
+                {{ form.code(class="form-control form-control-lg") }}
+                {% endif %}
+            </div>
+        </fieldset>
+        <div class="form-group">
+            {{ form.submit(class="btn btn-outline-info") }}
+        </div>
+    </form>
+</div>
+<div class="border-top pt-3">
+    <small class="text-muted">
+        <a class="ml-2" href="{{ url_for('about') }}">Why is this a site?</a>
+    </small>
+</div>
+{% endblock content %}
