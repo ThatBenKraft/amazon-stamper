@@ -1,14 +1,14 @@
 {% extends "layout.html" %}
 {% block content %}
-<h1>Stamper</h1>
+<h1>Amazon™ Stamper</h1>
 <div class="content-section">
     <form method="POST" action="" novalidate>
         {{ form.hidden_tag() }}
         <fieldset class="form-group">
-            <legend class="border-bottom mb-4">Enter a code for the Amazon Stamper to print.</legend>
+            <legend class="border-bottom mb-4">Enter a code for the stamper to print.</legend>
             <div class="form-group">
                 <!-- Displays label -->
-                {{ form.code.label(class="form-control-label") }} must be 4 alpha-numeric characters
+                {{ form.code.label(class="form-control-label") }} must be 4 hexadecimal characters.
                 <!-- Main code form input and displays errors -->
                 {% if form.code.errors %}
                 {{ form.code(class="form-control form-control-lg is-invalid") }}
@@ -27,6 +27,7 @@
         </div>
     </form>
 </div>
+<h4>On Tufts_Wireless, visit: 10.243.91.225:5000</h4>
 <div class="border-top pt-3">
     <small class="text-muted">
         <a class="ml-2" href="{{ url_for('about') }}">Why is this a site?</a>

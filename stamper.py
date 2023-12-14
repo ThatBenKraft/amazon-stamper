@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-# Stamper
+## Stamper
 Allows for full control of stamper robot. Chassis object controls wheel 
 position and orientation.
 """
@@ -12,9 +12,9 @@ from typing import Callable
 
 import RPi.GPIO as GPIO
 
+import host
 from motors import stepper
-from webapp import host
-from webapp.storage import Cells, get_cell, set_cell
+from storage import Cells, get_cell, set_cell
 
 __author__ = "Ben Kraft"
 __copyright__ = "None"
@@ -29,8 +29,6 @@ CHARACTERS = "0123456789ABCDEF"
 
 STARTING_CHARACTER = "0"
 
-NUM_CHARACTERS = len(CHARACTERS)
-
 
 # Defines directions
 class Directions:
@@ -44,15 +42,21 @@ class Directions:
     RIGHT = stepper.Directions.CLOCKWISE
 
 
-class StepCounts:
+class NumSteps:
     """
     A class used by the chassis to measure distances and angles.
     """
 
-    INK_DIP = 950
-    FLOOR_DIP = 1300
+    # Heights for vertical movement
+    FLOOR_HEIGHT = 2552
+    INK_HEIGHT = 2192
+    RESTING_HEIGHT = 1400
+    INK_DIP = INK_HEIGHT - RESTING_HEIGHT
+    FLOOR_DIP = FLOOR_HEIGHT - RESTING_HEIGHT
+    # Counts for horizontal movement
     INK_WIDTH = 1100
     CHARACTER_WIDTH = 400
+    # Count for character advancement
     ADVANCE_CHARACTER = 12.5
 
 
@@ -81,8 +85,8 @@ class Chassis:
         self.HORIZONTAL_MOTOR = stepper.Motor((5, 6, 12, 13))
         self.VERTICAL_MOTOR = stepper.Motor((17, 22, 23, 27))
         # Assigns limit pins
-        self.HORIZONTAL_LIMIT_PIN = 4
-        self.VERTICAL_LIMIT_PIN = 25
+        self.HORIZONTAL_LIMIT_PIN = 18
+        self.VERTICAL_LIMIT_PIN = 4
         # Sets up limit switch with internal pull up resistor
         GPIO.setup(self.HORIZONTAL_LIMIT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
         GPIO.setup(self.VERTICAL_LIMIT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
@@ -98,6 +102,8 @@ class Chassis:
         difference and direction as parameters. Optional difference delay
         parameter.
         """
+        print(f"Difference: {character_difference}")
+        print(f"Direction: {difference_direction}")
         # Acquires direction from difference
         if not difference_direction:
             direction = int(copysign(1, character_difference))
@@ -108,7 +114,7 @@ class Chassis:
             # Advances wheel one character in direction
             stepper.step_motor(
                 motor=self.WHEEL_MOTOR,
-                num_steps=StepCounts.ADVANCE_CHARACTER,
+                num_steps=NumSteps.ADVANCE_CHARACTER,
                 direction=-direction,
                 sequence=stepper.Sequences.HALFSTEP,
                 rpm=self.WHEEL_RPM,
@@ -132,8 +138,9 @@ class Chassis:
         if not character_difference:
             return
         # Optimizes difference to take shortest path
-        if abs(character_difference) > NUM_CHARACTERS // 2:
-            character_difference += NUM_CHARACTERS * -difference_direction
+        if abs(character_difference) > len(CHARACTERS) // 2:
+            character_difference += len(CHARACTERS) * -difference_direction
+            difference_direction *= -1
         # Reports amount wheel will advance
         if report:
             # Defines direction name
@@ -188,16 +195,35 @@ class Chassis:
         Moves chassis down and then up. Takes number of steps as parameter.
         Optional delay parameter.
         """
+        # Defines bottom margin variables
+        SLOW_STEPS = 192
+        SLOW_FACTOR = 0.3
+        bottom_margin = SLOW_STEPS if SLOW_STEPS < num_steps else 0
         # Locks character motor
         if lock:
             stepper.lock(self.WHEEL_MOTOR)
-        # time.sleep(delay)
-        self.move_vertical(num_steps, Directions.DOWN)
+        # Moves down in main and bottom stages
+        self.move_vertical(num_steps - bottom_margin, Directions.DOWN)
+        self.move_vertical(bottom_margin, Directions.DOWN, self.MOVE_RPM * SLOW_FACTOR)
+        # Waits at bottom
         time.sleep(delay)
-        self.move_vertical(num_steps, Directions.UP)
+        # Moves up in bottom and main stages
+        self.move_vertical(bottom_margin, Directions.UP, self.MOVE_RPM * SLOW_FACTOR)
+        self.move_vertical(num_steps - bottom_margin, Directions.UP)
         # Unlocks character motor
         if lock:
             stepper.unlock(self.WHEEL_MOTOR)
+
+    def re_ink(self) -> None:
+        """
+        Moves to ink pad to resupply and returns to original position.
+        """
+        # Zeros out and records steps
+        steps_taken = self.zero_horizontal()
+        # Dips to pad
+        self.dip(NumSteps.INK_DIP)
+        # Moves back to original position
+        self.move_horizontal(steps_taken, Directions.RIGHT)
 
     def zero_horizontal(self) -> int:
         """
@@ -217,11 +243,15 @@ class Chassis:
         taken before stopping.
         """
         # Runs zeroing function
-        return self._zero(
+        taken_steps = self._zero(
             self.move_vertical,
             Directions.UP,
             self.VERTICAL_LIMIT_PIN,
         )
+        # Move down into position
+        self.move_vertical(NumSteps.RESTING_HEIGHT, Directions.DOWN)
+        # Returns original vertial position
+        return taken_steps
 
     def _zero(
         self,
@@ -236,7 +266,7 @@ class Chassis:
         before stopping.
         """
         # Defines variables for loop
-        MAX_STEPS = 5000
+        MAX_STEPS = 3000
         steps_taken = 0
         # While pin is not active and number of steps is under max:
         while (
@@ -250,16 +280,19 @@ class Chassis:
         # Returns total steps taken before stopping
         return steps_taken
 
-    def re_ink(self) -> None:
+    def zero_simultaneous(self) -> None:
         """
-        Moves to ink pad to resupply and returns to original position.
+        Zeros in both axes at the same time.
         """
-        # Zeros out and records steps
-        steps_taken = self.zero_horizontal()
-        # Dips to pad
-        self.dip(StepCounts.INK_DIP)
-        # Moves back to original position
-        self.move_horizontal(steps_taken, Directions.RIGHT)
+        # Creates threads
+        horizontal_thread = Thread(target=self.zero_horizontal)
+        vertical_thread = Thread(target=self.zero_vertical)
+        # Starts threads
+        horizontal_thread.start()
+        vertical_thread.start()
+        # Joins threads
+        horizontal_thread.join()
+        vertical_thread.join()
 
     def print_code(self, code: str) -> None:
         """
@@ -267,7 +300,7 @@ class Chassis:
         """
         # Zeros out horizontal
         print("Zeroing. . .")
-        self.zero_horizontal()
+        self.zero_simultaneous()
         # Defines starting character
         prev_character = STARTING_CHARACTER
         # For each character in code:
@@ -283,13 +316,11 @@ class Chassis:
             # Sets previous character to character
             prev_character = character
             # Defines shift amount with exception for first loop
-            horizontal_shift = (
-                StepCounts.CHARACTER_WIDTH if index else StepCounts.INK_WIDTH
-            )
+            horizontal_shift = NumSteps.CHARACTER_WIDTH if index else NumSteps.INK_WIDTH
             # Shifts to next position
             self.move_horizontal(horizontal_shift, Directions.RIGHT)
             # Dips chassis
-            self.dip(StepCounts.FLOOR_DIP)
+            self.dip(NumSteps.FLOOR_DIP)
 
 
 def code_input(characters: list[str]) -> str:
@@ -311,52 +342,50 @@ def code_input(characters: list[str]) -> str:
     return code.upper()
 
 
-def test_actions(chassis: Chassis) -> None:
-    """
-    Runs a series of test actions.
-    """
-
-    chassis.move_horizontal(600, Directions.RIGHT)
-
-    chassis.move_vertical(600, Directions.DOWN)
-
-    chassis.zero_horizontal()
-    chassis.zero_vertical()
-
-
 def main() -> None:
+    """
+    Runs main stamper actions.
+    """
+    # Creates and starts flask thread
+    flask_thread = Thread(target=host.run_flask)
+    flask_thread.start()
+
+    def get_code() -> str:
+        """
+        Helper function for accessing code fom sheet.
+        """
+        return str(get_cell(Cells.CODE))
+
+    set_cell(Cells.RUNNING, False)
+    # Creates chassis object
+    chassis = Chassis(STARTING_CHARACTER)
+    # Initializes previous code
+    previous_code = get_code()
+    # Loops stamping actions
+    while True:
+        time.sleep(1)
+        print("Scanning for new code...")
+        # Gets code
+        current_code = get_code()
+        # If code is different:
+        if current_code != previous_code:
+            print("NEW CODE, SETTING SHEET")
+            # Sets sheet running boolean TRUE
+            set_cell(Cells.RUNNING, True)
+            # Prints
+            time.sleep(1)
+            print(f"Printing code: {current_code}")
+            chassis.print_code(current_code)
+            time.sleep(1)
+            # Sets sheet running boolean FALSE
+            set_cell(Cells.RUNNING, False)
+        # Sets previous code for next loop
+        previous_code = current_code
+
+
+if __name__ == "__main__":
     try:
-        # Creates and starts flask thread
-        flask_thread = Thread(target=host.run_flask)
-        flask_thread.start()
-
-        def get_code() -> str:
-            """
-            Helper function for accessing code fom sheet.
-            """
-            return str(get_cell(Cells.CODE))
-
-        # Creates chassis object
-        chassis = Chassis(STARTING_CHARACTER)
-        # Initializes previous code
-        previous_code = get_code()
-        # Loops stamping actions
-        while True:
-            # Gets code
-            print("Acquiring code. . .")
-            time.sleep(3)
-            current_code = get_code()
-            # If code is different:
-            if current_code != previous_code:
-                # Sets sheet running boolean TRUE
-                set_cell(Cells.RUNNING, True)
-                # Prints
-                time.sleep(1)
-                print(f"Printing code: {current_code}")
-                chassis.print_code(current_code)
-                time.sleep(1)
-                # Sets sheet running boolean FALSE
-                set_cell(Cells.RUNNING, False)
+        main()
     # Catches keyboard interrupt
     except KeyboardInterrupt:
         pass
@@ -365,7 +394,3 @@ def main() -> None:
         host.stop_flask()
         # Cleans up board
         stepper.board_cleanup()
-
-
-if __name__ == "__main__":
-    main()

@@ -1,0 +1,48 @@
+body {
+    background: #fafafa;
+    background-image: url('background.png');
+    background-size: 150%;
+    background-position: center center;
+    background-repeat: repeat;
+    color: #333333;
+    margin-top: 5rem;
+}
+
+@font-face {
+    font-family: 'AmazonEmber';
+    src: url('font/AmazonEmberDisplay_Lt.ttf') format('truetype');
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: #ffffff;
+    font-family: 'AmazonEmber', sans-serif;
+}
+
+h1 {
+    font-size: 3em;
+}
+
+.bg-steel {
+    background-color: #5f788a;
+}
+
+.content-section {
+    background: #ffffff;
+    padding: 10px 20px;
+    border: 1px solid #dddddd;
+    border-radius: 3px;
+    margin-bottom: 20px;
+}
+
+a {
+    color: white;
+}
+
+a:hover {
+    color: rgb(255, 221, 188);
+}

@@ -1,9 +1,10 @@
 # VSCode Settings
-.vscode/
+/.vscode
 # Libraries / testing
-motors/
-testing/
-testing.py/
-tempCodeRunnerFile.py/
-__pycache__/
+/motors
+/testing
+testing.py
+test_movement.py
+tempCodeRunnerFile.py
+**/__pycache__
 *.pyc
