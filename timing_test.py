@@ -1,32 +1,30 @@
-class NumSteps:
-    """
-    A class used by the chassis to measure distances and angles.
-    """
+#!/usr/bin/env python
+"""
+## Timing Tests
+Exists to approximate the runtime of `Chassis.print_fast()`.
+"""
 
-    # Heights for vertical movement
-    FLOOR_POSITION = 2552.0
-    INK_POSITION = 2192.0
-    SURFACE_SPACING = 200.0
-    # Counts for horizontal movement
-    PRINT_START = 1100.0
-    CHARACTER_WIDTH = 400.0
-    # Count for character advancement
-    ADVANCE_CHARACTER = 12.5
-    # Maximum positions
-    HORIZONTAL_MAX = 2300.0
-    VERTICAL_MAX = FLOOR_POSITION
+from stamper import NumSteps
 
+__author__ = "Ben Kraft"
+__copyright__ = "None"
+__credits__ = "Ben Kraft"
+__license__ = "Apache"
+__version__ = "0.0.1"
+__maintainer__ = "Ben Kraft"
+__email__ = "ben.kraft@rcn.com"
+__status__ = "Prototype"
 
 total_steps = (
     NumSteps.INK_POSITION
-    - NumSteps.SURFACE_SPACING
-    + (NumSteps.SURFACE_SPACING * 2 + NumSteps.ADVANCE_CHARACTER * 8) * 4
-    + NumSteps.PRINT_START
+    - NumSteps.SURFACE_MARGIN
+    + (NumSteps.SURFACE_MARGIN * 2 + NumSteps.ADVANCE_CHARACTER * 8) * 4
+    + NumSteps.INK_WIDTH
     + NumSteps.FLOOR_POSITION
-    - NumSteps.SURFACE_SPACING
+    - NumSteps.SURFACE_MARGIN
     - NumSteps.INK_POSITION
     + NumSteps.CHARACTER_WIDTH * 3
-    + (NumSteps.SURFACE_SPACING * 2 + NumSteps.ADVANCE_CHARACTER * 8) * 4
+    + (NumSteps.SURFACE_MARGIN * 2 + NumSteps.ADVANCE_CHARACTER * 8) * 4
 )
 
 print(f"Steps: {total_steps}")

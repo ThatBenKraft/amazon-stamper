@@ -12,7 +12,7 @@ from typing import Callable
 
 import RPi.GPIO as GPIO
 
-import host
+import webapp
 from motors import stepper
 from storage import Cells, get_cell, set_cell
 
@@ -46,16 +46,16 @@ class Directions:
 
 class Pins:
     """
-    Establishes extra pins used in stamper.
+    Establishes extra BCM pins used in stamper.
     """
 
     HORIZONTAL_LIMIT = 18
     VERTICAL_LIMIT = 4
 
 
-# Sets up limit switch with internal pull up resistor
-GPIO.setup(Pins.HORIZONTAL_LIMIT, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
-GPIO.setup(Pins.VERTICAL_LIMIT, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
+# Sets up limit switches with internal pull up resistor
+for pin in (Pins.HORIZONTAL_LIMIT, Pins.VERTICAL_LIMIT):
+    GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)  # type: ignore
 
 
 class Motors:
@@ -76,7 +76,7 @@ class NumSteps:
     # Heights for vertical movement
     FLOOR_POSITION = 2552.0
     INK_POSITION = 2192.0
-    SURFACE_SPACING = 200.0
+    SURFACE_MARGIN = 200.0
     # Counts for horizontal movement
     INK_WIDTH = 1100.0
     CHARACTER_WIDTH = 400.0
@@ -98,13 +98,13 @@ class Chassis:
     MOVE_RPM = 80.0
     WHEEL_RPM = 20.0
 
-    def __init__(self, current_character: str, zero: bool = True) -> None:
+    def __init__(self, starting_character: str, zero: bool = True) -> None:
         """
         A class for controlling the stamper chassis horizonal, vertical, and
-        wheel movements.
+        wheel movements. Takes starting character as parameter.
         """
         # Sets current character index
-        self.character_index = self._index(current_character)
+        self.character_index = self._index(starting_character)
         # Sets current position to max for zeroing
         self.horizontal_position = NumSteps.HORIZONTAL_MAX
         self.vertical_position = NumSteps.VERTICAL_MAX
@@ -141,7 +141,7 @@ class Chassis:
             )
             time.sleep(delay)
 
-    def advance_to_character(self, new_character: str, report: bool = False) -> None:
+    def advance_character_to(self, new_character: str, report: bool = False) -> None:
         """
         Advances wheel from current character to new character. Takes current
         character as input. Optional parameter to report amount moved.
@@ -176,7 +176,7 @@ class Chassis:
         """
         # Checks for invalid character
         if character not in CHARACTERS:
-            raise ValueError("Charater not on wheel!")
+            raise ValueError(f"Charater [ {character} ] not on wheel!")
         # Returns appropriate index
         return CHARACTERS.index(character)
 
@@ -185,7 +185,7 @@ class Chassis:
     ) -> float:
         """
         Moves slider horizontally on lead screw. Takes number of steps and
-        direction as parameters.
+        direction as parameters. Optional RPM parameter.
         """
         # Defines number of steps moving to the right
         steps_right = num_steps * direction * Directions.RIGHT
@@ -230,7 +230,7 @@ class Chassis:
     ) -> float:
         """
         Moves chassis vertically on lead screws. Takes number of steps and
-        direction as parameters.
+        direction as parameters. Optional RPM parameter.
         """
         # Defines number of positive steps moving to the right
         steps_down = num_steps * direction * Directions.DOWN
@@ -273,7 +273,7 @@ class Chassis:
     def dip(self, num_steps: float, slow_proportion: float = 0.5) -> None:
         """
         Moves chassis down and then up. Takes number of steps as parameter.
-        Optional delay parameter.
+        Optional slowed proportion parameter.
         """
         # Defines slowed bottom margin variables
         SLOW_SPEED = 0.3
@@ -370,13 +370,13 @@ class Chassis:
 
     def print_slow(self, code: str) -> None:
         """
-        Runs main stamper actions. Slowly.
+        Runs main stamper actions, inking between all characters.
         """
         # Zeros out horizontal
         print("Zeroing. . .")
         self.zero_simultaneous()
         self.move_vertical(
-            NumSteps.INK_POSITION - NumSteps.SURFACE_SPACING, Directions.DOWN
+            NumSteps.INK_POSITION - NumSteps.SURFACE_MARGIN, Directions.DOWN
         )
         # Defines starting character
         prev_character = STARTING_CHARACTER
@@ -385,14 +385,14 @@ class Chassis:
             # Reports character
             print(f"Stamping: [ {character} ]...")
             # Moves wheel to character
-            self.advance_to_character(character)
+            self.advance_character_to(character)
             # Re-inks if nessesary
             if not (character == prev_character and index):
                 print("Re-inking. . .")
                 # Zeros out and records steps
                 steps_taken = self.zero_horizontal()
                 # Dips to pad
-                self.dip(NumSteps.SURFACE_SPACING)
+                self.dip(NumSteps.SURFACE_MARGIN)
                 # Moves back to original position
                 self.move_horizontal(steps_taken, Directions.RIGHT)
             # Sets previous character to character
@@ -405,29 +405,29 @@ class Chassis:
             self.dip(
                 NumSteps.FLOOR_POSITION
                 - NumSteps.INK_POSITION
-                + NumSteps.SURFACE_SPACING,
+                + NumSteps.SURFACE_MARGIN,
                 slow_proportion=0.25,
             )
 
     def print_fast(self, code: str) -> None:
         """
-        Runs main stamper actions. Quickly.
+        Runs main stamper actions, inking all characters once at start.
         """
         # Zeros out horizontal
         self.zero_simultaneous()
         # Moves ready to ink
-        self.move_vertical_to(NumSteps.INK_POSITION - NumSteps.SURFACE_SPACING)
+        self.move_vertical_to(NumSteps.INK_POSITION - NumSteps.SURFACE_MARGIN)
         # For each character:
         for character in code:
             print(f"Inking: [ {character} ]...")
             # Advances to character
-            self.advance_to_character(character)
+            self.advance_character_to(character)
             # Inks
-            self.dip(NumSteps.SURFACE_SPACING)
+            self.dip(NumSteps.SURFACE_MARGIN)
         # Moves away from ink pad
         self.move_horizontal(NumSteps.INK_WIDTH, Directions.RIGHT)
         # Moves ready to print
-        self.move_vertical_to(NumSteps.FLOOR_POSITION - NumSteps.SURFACE_SPACING)
+        self.move_vertical_to(NumSteps.FLOOR_POSITION - NumSteps.SURFACE_MARGIN)
         # For each character
         for index, character in enumerate(code):
             print(f"Printing: [ {character} ]...")
@@ -436,9 +436,9 @@ class Chassis:
                 # Shift to next floor posiiton
                 self.move_horizontal(NumSteps.CHARACTER_WIDTH, Directions.RIGHT)
             # Advances to character
-            self.advance_to_character(character)
+            self.advance_character_to(character)
             # Prints
-            self.dip(NumSteps.SURFACE_SPACING)
+            self.dip(NumSteps.SURFACE_MARGIN)
 
 
 def code_input(characters: list[str]) -> str:
@@ -465,7 +465,7 @@ def main() -> None:
     Runs main stamper actions.
     """
     # Creates and starts flask thread
-    flask_thread = Thread(target=host.run_flask)
+    flask_thread = Thread(target=webapp.run_flask)
     flask_thread.start()
 
     def get_code() -> str:
@@ -509,6 +509,6 @@ if __name__ == "__main__":
         pass
     finally:
         # Stops flask
-        host.stop_flask()
+        webapp.stop_flask()
         # Cleans up board
         stepper.board_cleanup()

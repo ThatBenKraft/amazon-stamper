@@ -45,7 +45,7 @@ app.config["SECRET_KEY"] = os.urandom(32)
 server_running = False
 
 
-def Hexadecimal(form: FlaskForm, field: StringField) -> None:
+def _ValidCharacters(form: FlaskForm, field: StringField) -> None:
     """
     Custom validator used for checking if code is in hexadecimal.
     """
@@ -67,7 +67,7 @@ class CodeForm(FlaskForm):
         validators=[
             DataRequired(),
             Length(min=4, max=4),
-            Hexadecimal,
+            _ValidCharacters,
         ],
     )
     submit = SubmitField("Submit")
