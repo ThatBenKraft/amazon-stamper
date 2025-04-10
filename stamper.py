@@ -25,8 +25,6 @@ __maintainer__ = "Ben Kraft"
 __email__ = "ben.kraft@rcn.com"
 __status__ = "Prototype"
 
-CHARACTERS = "0123456789ABCDEF"
-
 STARTING_CHARACTER = "0"
 
 # Sets up board with BCM
@@ -97,6 +95,8 @@ class Chassis:
     SEQUENCE = stepper.Sequences.HALFSTEP
     MOVE_RPM = 80.0
     WHEEL_RPM = 20.0
+    CHARACTERS = "0123456789ABCDEF"
+    NUM_CHARACTERS = len(CHARACTERS)
 
     def __init__(self, starting_character: str, zero: bool = True) -> None:
         """
@@ -104,7 +104,10 @@ class Chassis:
         wheel movements. Takes starting character as parameter.
         """
         # Sets current character index
-        self.character_index = self._index(starting_character)
+        if starting_character.upper() not in self.CHARACTERS:
+            raise ValueError("Starting character must be in hexadecimal.")
+        else:
+            self.current_character = starting_character.upper()
         # Sets current position to max for zeroing
         self.horizontal_position = NumSteps.HORIZONTAL_MAX
         self.vertical_position = NumSteps.VERTICAL_MAX
@@ -113,72 +116,62 @@ class Chassis:
             self.zero_vertical()
             self.zero_horizontal()
 
-    def advance_wheel(
-        self,
-        character_difference: int = 1,
-        difference_direction: int = 0,
-        delay: float = 0,
-    ) -> None:
+    def _index_of(self, character: str) -> int:
         """
-        Advances wheel one character in specified direction. Takes character
-        difference and direction as parameters. Optional difference delay
-        parameter.
+        Finds index of character on wheel.
         """
-        # Acquires direction from difference
-        if not difference_direction:
-            direction = int(copysign(1, character_difference))
-        else:
-            direction = difference_direction
-        # For each difference:
-        for _ in range(abs(character_difference)):
-            # Advances wheel one character in direction
-            stepper.step_motor(
-                motor=Motors.STAMPER_WHEEL,
-                num_steps=NumSteps.ADVANCE_CHARACTER,
-                direction=-direction,
-                sequence=self.SEQUENCE,
-                rpm=self.WHEEL_RPM,
-            )
-            time.sleep(delay)
+        # Checks for invalid character
+        if character.upper() not in self.CHARACTERS:
+            raise ValueError(f"Charater [ {character} ] not on wheel!")
+        # Returns appropriate index
+        return self.CHARACTERS.index(character.upper())
 
     def advance_character_to(self, new_character: str, report: bool = False) -> None:
         """
         Advances wheel from current character to new character. Takes current
         character as input. Optional parameter to report amount moved.
         """
-        # Finds index of new character
-        new_index = self._index(new_character)
-        # Finds difference between positions
-        character_difference = new_index - self.character_index
-        # Re-assigns current character
-        self.character_index = new_index
-        # Defines direction of wheel movement
-        difference_direction = int(copysign(1, character_difference))
+        # Finds distance between positions
+        character_distance = self._index_of(new_character) - self._index_of(
+            self.current_character
+        )
         # Checks that character movement is needed
-        if not character_difference:
+        if not character_distance:
+            if report:
+                print(f'Wheel is already on "{new_character}"!')
             return
-        # Optimizes difference to take shortest path
-        if abs(character_difference) > len(CHARACTERS) // 2:
-            character_difference += len(CHARACTERS) * -difference_direction
-            difference_direction *= -1
+        # Corrects for large distances
+        if abs(character_distance) > self.NUM_CHARACTERS // 2:
+            character_distance -= int(copysign(self.NUM_CHARACTERS, character_distance))
         # Reports amount wheel will advance
         if report:
             # Defines direction name
-            direction_name = "forwards" if character_difference > 0 else "backwards"
+            direction_name = "forwards" if character_distance > 0 else "backwards"
             # Prints statement
-            print(f"Turning wheel {direction_name} {character_difference} stages!")
+            print(f"Turning wheel {direction_name} {abs(character_distance)} stages!")
         # Advances
-        self.advance_wheel(character_difference, difference_direction)
+        self.advance_wheel(character_distance)
+        # Re-assigns current character
+        self.current_character = new_character
 
-    def _index(self, character: str) -> int:
+    def advance_wheel(self, character_distance: int = 1, delay: float = 0) -> None:
         """
-        Finds index of character on wheel.
+        Advances wheel one character in specified direction. Takes character
+        distance as parameter. Optional delay parameter.
         """
-        # Checks for invalid character
-        if character not in CHARACTERS:
-            raise ValueError(f"Charater [ {character} ] not on wheel!")
-        # Returns appropriate index
-        return CHARACTERS.index(character)
+        # Defines direction from sign
+        direction = int(copysign(1, character_distance))
+        # For each stage:
+        for _ in range(abs(character_distance)):
+            # Advances wheel one character in direction
+            stepper.step_motor(
+                motor=Motors.STAMPER_WHEEL,
+                num_steps=NumSteps.ADVANCE_CHARACTER,
+                direction=direction,
+                sequence=self.SEQUENCE,
+                rpm=self.WHEEL_RPM,
+            )
+            time.sleep(delay)
 
     def move_horizontal(
         self, num_steps: float, direction: int, rpm: float = MOVE_RPM
@@ -209,22 +202,6 @@ class Chassis:
         # Returns number of steps taken
         return steps_taken
 
-    def move_horizontal_to(self, step_position: float, rpm: float = MOVE_RPM) -> float:
-        """
-        Moves slider horizontally on lead screw to desired step position. Takes
-        horizontal step position as parameter. Optional RPM parameter.
-        """
-        # If position is zero:
-        if not step_position:
-            # Zeros horizontally
-            return self.zero_horizontal()
-        # Moves difference between new and current position and returns steps taken
-        return self.move_horizontal(
-            step_position - self.horizontal_position,
-            Directions.RIGHT,
-            rpm,
-        )
-
     def move_vertical(
         self, num_steps: float, direction: int, rpm: float = MOVE_RPM
     ) -> float:
@@ -254,6 +231,22 @@ class Chassis:
         # Returns number of steps taken
         return steps_taken
 
+    def move_horizontal_to(self, step_position: float, rpm: float = MOVE_RPM) -> float:
+        """
+        Moves slider horizontally on lead screw to desired step position. Takes
+        horizontal step position as parameter. Optional RPM parameter.
+        """
+        # If position is zero:
+        if not step_position:
+            # Zeros horizontally
+            return self.zero_horizontal()
+        # Moves difference between new and current position and returns steps taken
+        return self.move_horizontal(
+            step_position - self.horizontal_position,
+            Directions.RIGHT,
+            rpm,
+        )
+
     def move_vertical_to(self, step_position: float, rpm: float = MOVE_RPM) -> float:
         """
         Moves slider vertically on lead screw to desired step position. Takes
@@ -269,25 +262,6 @@ class Chassis:
             Directions.DOWN,
             rpm,
         )
-
-    def dip(self, num_steps: float, slow_proportion: float = 0.5) -> None:
-        """
-        Moves chassis down and then up. Takes number of steps as parameter.
-        Optional slowed proportion parameter.
-        """
-        # Defines slowed bottom margin variables
-        SLOW_SPEED = 0.3
-        # Calculates new number of steps and rpm for bottom margin
-        slow_num_steps = num_steps * slow_proportion
-        slow_rpm = self.MOVE_RPM * SLOW_SPEED
-        # Moves down in main and bottom stages
-        self.move_vertical(num_steps - slow_num_steps, Directions.DOWN)
-        self.move_vertical(slow_num_steps, Directions.DOWN, slow_rpm)
-        # Waits at bottom
-        time.sleep(0.5)
-        # Moves up in bottom and main stages
-        self.move_vertical(slow_num_steps, Directions.UP, slow_rpm)
-        self.move_vertical(num_steps - slow_num_steps, Directions.UP)
 
     def zero_horizontal(self) -> float:
         """
@@ -331,7 +305,6 @@ class Chassis:
         direction: int,
         limit_pin: int,
         position_guess: float,
-        step_intervals: float = 4.0,
     ) -> float:
         """
         Zeroes movement against specified limit switch. Takes moving function,
@@ -340,6 +313,7 @@ class Chassis:
         """
         # Defines variables for loop
         STEP_BUFFER = 400
+        STEP_INTERVAL = 4
         steps_taken = 0.0
         # While pin is not active and number of steps is under position guess
         # plus max:
@@ -348,9 +322,9 @@ class Chassis:
             and steps_taken < position_guess + STEP_BUFFER
         ):
             # Moves number of steps
-            move_function(step_intervals, direction)
+            move_function(STEP_INTERVAL, direction)
             # Adds steps taken
-            steps_taken += step_intervals
+            steps_taken += STEP_INTERVAL
         # Returns total steps taken before stopping
         return steps_taken
 
@@ -367,6 +341,26 @@ class Chassis:
         # Waits until both threads are finished
         horizontal_thread.join()
         vertical_thread.join()
+
+    def dip(
+        self,
+        num_steps: float,
+        slow_step_fraction: float = 0.5,
+        slow_rpm_fraction: float = 0.3,
+    ) -> None:
+        """
+        Moves chassis down and then up. Takes number of steps as parameter.
+        Optional slowed number of steps fraction and slowed speed parameters.
+        """
+        # Calculates new number of steps and rpm for bottom margin
+        slow_num_steps = num_steps * slow_step_fraction
+        slow_rpm = self.MOVE_RPM * slow_rpm_fraction
+        # Moves down and up with a slower bottom portion
+        self.move_vertical(num_steps - slow_num_steps, Directions.DOWN)
+        self.move_vertical(slow_num_steps, Directions.DOWN, slow_rpm)
+        time.sleep(0.5)
+        self.move_vertical(slow_num_steps, Directions.UP, slow_rpm)
+        self.move_vertical(num_steps - slow_num_steps, Directions.UP)
 
     def print_slow(self, code: str) -> None:
         """
@@ -406,7 +400,7 @@ class Chassis:
                 NumSteps.FLOOR_POSITION
                 - NumSteps.INK_POSITION
                 + NumSteps.SURFACE_MARGIN,
-                slow_proportion=0.25,
+                slow_step_fraction=0.25,
             )
 
     def print_fast(self, code: str) -> None:
@@ -420,7 +414,7 @@ class Chassis:
         # For each character:
         for character in code:
             print(f"Inking: [ {character} ]...")
-            # Advances to character
+            # Advances to character, inks and waits
             self.advance_character_to(character)
             # Inks
             self.dip(NumSteps.SURFACE_MARGIN)
@@ -441,25 +435,6 @@ class Chassis:
             self.dip(NumSteps.SURFACE_MARGIN)
 
 
-def code_input(characters: list[str]) -> str:
-    """
-    Gets code from command line. Takes character list as parameter.
-    """
-    while True:
-        code = input("Please enter a four-character code to print: ")
-        # If code isn't four characters:
-        if len(code) != 4:
-            print("Code must be four characters long.")
-            continue
-        # If the code has characters not in list:
-        elif any(character.upper() not in characters for character in code):
-            print("One or more characters in code not on wheel.")
-            continue
-        break
-    # Returns valid code
-    return code.upper()
-
-
 def main() -> None:
     """
     Runs main stamper actions.
@@ -467,16 +442,13 @@ def main() -> None:
     # Creates and starts flask thread
     flask_thread = Thread(target=webapp.run_flask)
     flask_thread.start()
-
-    def get_code() -> str:
-        """
-        Helper function for accessing code fom sheet.
-        """
-        return str(get_cell(Cells.CODE))
-
+    # Helper function for accessing code fom sheet.
+    get_code = lambda: str(get_cell(Cells.CODE))
+    # Sets running state to false
     set_cell(Cells.RUNNING, False)
     # Creates chassis object
     chassis = Chassis(STARTING_CHARACTER)
+
     # Initializes previous code
     previous_code = get_code()
     # Loops stamping actions
@@ -493,7 +465,7 @@ def main() -> None:
             # Prints
             time.sleep(1)
             print(f"Printing code: {current_code}")
-            chassis.print_slow(current_code)
+            chassis.print_fast(current_code)
             time.sleep(1)
             # Sets sheet running boolean FALSE
             set_cell(Cells.RUNNING, False)
@@ -506,8 +478,6 @@ if __name__ == "__main__":
         main()
     # Catches keyboard interrupt
     except KeyboardInterrupt:
-        pass
-    finally:
         # Stops flask
         webapp.stop_flask()
         # Cleans up board

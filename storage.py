@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 ## Storage
 Allows for storage of stamper data, such as code and running status.

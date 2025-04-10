@@ -22,7 +22,7 @@ from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField, ValidationError
 from wtforms.validators import DataRequired, Length
 
-from stamper import CHARACTERS
+from stamper import Chassis
 from storage import Cells, get_cell, set_cell
 
 __author__ = "Ben Kraft"
@@ -52,7 +52,7 @@ def _ValidCharacters(form: FlaskForm, field: StringField) -> None:
     # For each character in code
     for character in field.data:  # type:ignore
         # If character is not in characters:
-        if character.upper() not in CHARACTERS:
+        if character.upper() not in Chassis.CHARACTERS:
             # Raises error
             raise ValidationError("Field must be in hexadecimal.")
 
