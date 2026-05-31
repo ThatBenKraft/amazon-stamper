@@ -67,7 +67,6 @@ I wrote a custom <a href="https://github.com/ThatBenKraft/motors" target="_blank
 
 The first prototype was very helpful in pointing out the problem points with our design. These mainly came down to frame size, stamper wheel size, slider catching, and chassis instability. The stamper wheel size was an easy fix since flatter, larger stamps led to more legible markings, a smaller wheel, and a smaller chassis overall. We again took more inspiration from existing 3D printers to add two additional support rods, which helped to stabilize the now-smaller chassis as it moved vertically. Our second design included a custom-milled keyed shaft since our first iteration had many imperfections that led to increased stamper wheel binding.
 
-<!---
 <table align="center" style="margin: 0px auto;">
   <tr>
     <td align="center">
@@ -78,13 +77,96 @@ The first prototype was very helpful in pointing out the problem points with our
       <img width="1000" height="773" alt="Chassis Assembly" src="https://github.com/user-attachments/assets/7cb2267d-b090-4efb-a4d7-a2051a896bae" /> <br>
       Final "Prototype B" chassis design
     </td>
+  </tr>
+</table>
+
+<div align="center">
+  <img width="1000" height="624" alt="Movement_Animation_small" src="https://github.com/user-attachments/assets/b0ad4fa9-a181-41be-919e-53df329c4498" />
+  An animation of the stamping wheel motion
+</div>
+
+## 🛞 Wheel Tests
+
+<img width="650" height="345" alt="stamper_wheel_combined" align="left" src="https://github.com/user-attachments/assets/0bc39cc9-9b19-4475-89c9-df58320abffd" />
+
+I performed tests to determine how our new stamper wheel would be designed. Since the stamps were not as tall, the profiles could be placed side-by-side and the overall radius decreased. Since they were made of rubber and I wanted the stamps to be removable, I used the small nubs in the backs of the stamps to create a press-fit into the geometry of the wheel. 
+
+Two trials were conducted between the use of a Prusa Mark4 using PLA and a Stratasys F120 using ABS-M30, and the Mark4 fit our needs slightly better.
+
+<br clear="left"/>
+
+## ❌ Obstacles
+
+### The Binding Problem
+
+One major problem in both prototypes was that the stamper wheel would catch on the keyed shaft when attempting to move horizontally. We discovered this was due to unbalanced forces exerted on the wheel from the acrylic plates making up the slider. When the slider lead screw was turned, the acrylic plates would skew outwards slightly and apply normal forces exclusively on the outer edges of the stamper wheel. This would create a torque around its center, and it would catch on the keyed shaft. 
+
+To solve this, we first tried acrylic spacers that would attempt to stabilize the slider plates, and while this helped alleviate some problems, the binding would inconsistently return. Our final solution was introducing two linear bushings directly next to the keyed shaft, minimizing normal forces that introduced torque on the system.
+
+<div align="center">
+  <img width="650" height="304" alt="binding_problem" src="https://github.com/user-attachments/assets/21be1f65-0db0-4f8e-8aa0-36fba3b0325d" /> <br>
+  The initial design, the primary forces problem, and the final bushing solution.
+</div>
+
+### The Sequencing Problem
+
+Our motors operated on a general principle called sequencing, in which each coil within the stepper motor would be set to HIGH or LOW in a specific order to turn the rotor in a direction. We initially programmed our motors to use a whole-step sequence, which contains four “stages”, each corresponding to one “step” which would repeat for as long as you wanted the motor to run. For our Nema steppers, 200 of these steps would comprise one full rotation. Since we were using hexadecimal, it needed to turn 1/16th of a rotation (or 12.5 steps) for each character. 
+
+We decided to use half-steps, which uses two “stages” per step and eight stages total. Each motor object would now also keep track of where it was inside a sequence so that it would not skip any stages, resulting in an overall increased accuracy.
+
+<div align="center">
+  <img width="650" height="279" alt="sequencing" src="https://github.com/user-attachments/assets/6b5b314c-bb20-4a21-ae5d-7ed05f11f822" /> <br>
+  Each colored column represents a specific motor lead, a 1 means it is set HIGH, and a 0 means it is set LOW. 
+</div>
+
+### The Dust Problem
+
+Since we needed to have a part of our design that tackled cleaning the floor in front of the stamper to combat dust accumulation, we talked to the Amazon representatives about how this could manifest in our design. With given freedom, we came up with a few design ideas of a "sweeper" that could clean the floor with dry dusting pads.
+
+<table align="center" style="margin: 0px auto;">
+  <tr>
     <td align="center">
-      <img width="1000" height="624" alt="Movement_Animation_small" src="https://github.com/user-attachments/assets/b0ad4fa9-a181-41be-919e-53df329c4498" /> <br>
-      The keyed shaft on a stepper motor
+      <img width="3296" height="2547" alt="roller_draft" src="https://github.com/user-attachments/assets/67df7c99-02d2-4f75-ba62-07659cec15df" /> <br>
+      A "roller" design that was later reworked
+    </td>
+    <td align="center">
+      <img width="3296" height="2547" alt="slider_draft_B" src="https://github.com/user-attachments/assets/11c56de3-9524-4de9-a470-4bfe438d3678" /> <br>
+      Another "pad" design that was not used
     </td>
   </tr>
 </table>
--->
+
+I modeled a few iterations, and then the final design that we would end up using in our final prototype. It incorporated two angled broom heads for large particulates, as well as a dry sweeping pad behind them to pick up finer debris. This was primarily made from laser-cut cast acrylic and purchased broom heads.
+
+<table align="center" style="margin: 0px auto;">
+  <tr>
+    <td align="center">
+      <img width="400" height="533" alt="sweeper_laser" src="https://github.com/user-attachments/assets/18bd64be-67e2-4d51-b06e-ceb512b04ac8" /> <br>
+      The acrylic jigsaw design after laser cutting
+    </td>
+    <td align="center">
+      <img width="600" height="450" alt="brush" src="https://github.com/user-attachments/assets/6fe17c17-0cfc-4811-aa91-98424376fff5" /> <br>
+      The assembled "sweeper"
+    </td>
+  </tr>
+</table>
+
+## 📦 Final Design
+
+Our last tasks were to create a dust-proof casing for the overall frame and an electronics housing to hold the Raspberry Pi and other electronics. These were additionally created with acrylic and affixed to the frame with various hardware. We then tested our robot, creating many successful code printings on paper during our showcase.
+
+<table align="center" style="margin: 0px auto;">
+  <tr>
+    <td align="center">
+      <img width="3696" height="2850" alt="final_prototype" src="https://github.com/user-attachments/assets/a59eb7b0-1b6c-44e8-83c1-9b5f6b35e868" />
+    </td>
+    <td align="center">
+      <img width="4516" height="3494" alt="family_photo" src="https://github.com/user-attachments/assets/5361dc41-b975-4c06-bc46-46578f91f270" />
+    </td>
+  </tr>
+</table>
+
+# Software Breakdown
 
 ## Stamper Classes
 
